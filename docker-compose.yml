@@ -1,0 +1,54 @@
+name: silosmart
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: silosmart
+      POSTGRES_PASSWORD: silosmart
+      POSTGRES_DB: silosmart
+    volumes:
+      - dados-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U silosmart -d silosmart"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://silosmart:silosmart@db:5432/silosmart
+      MQTT_URL: ${MQTT_URL:-mqtt://broker.hivemq.com:1883}
+      MQTT_PREFIXO: ${MQTT_PREFIXO:-silosmart/grupo01}
+      FRONT_ATUALIZACAO_SEGUNDOS: ${FRONT_ATUALIZACAO_SEGUNDOS:-5}
+      SEM_DADOS_APOS_SEGUNDOS: ${SEM_DADOS_APOS_SEGUNDOS:-30}
+      ALERTA_TEMPERATURA_MAX: ${ALERTA_TEMPERATURA_MAX:-30}
+      ALERTA_UMIDADE_MAX: ${ALERTA_UMIDADE_MAX:-70}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "${PORTA_PAINEL:-8088}:80"
+    depends_on:
+      - backend
+
+  # Opcional: finge ser um ESP32 publicando no broker.
+  # Sobe junto com: docker compose --profile simulador up
+  simulador:
+    build: ./backend
+    command: ["node", "src/simulador.js"]
+    profiles: ["simulador"]
+    environment:
+      MQTT_URL: ${MQTT_URL:-mqtt://broker.hivemq.com:1883}
+      MQTT_PREFIXO: ${MQTT_PREFIXO:-silosmart/grupo01}
+      SIMULADOR_SILO: ${SIMULADOR_SILO:-simulado}
+
+volumes:
+  dados-postgres:
